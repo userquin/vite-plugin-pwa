@@ -38,6 +38,24 @@ const config: UserConfig = {
           },
         ],
       },
+      workbox: {
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/http\.cat\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'cats-cache',
+              expiration: {
+                maxEntries: 4, // <== for testing
+                maxAgeSeconds: 10, // <== 10 seconds, for testing
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+        ],
+      },
     }),
     replace({
       __DATE__: new Date().toISOString(),

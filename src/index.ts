@@ -1,5 +1,5 @@
-import { resolve } from 'path'
-import { existsSync } from 'fs'
+import { resolve, basename } from 'path'
+import { existsSync, promises as fs } from 'fs'
 import type { Plugin, ResolvedConfig } from 'vite'
 import { generateSW } from 'workbox-build'
 import { generateSimpleSWRegister, injectServiceWorker } from './html'
@@ -13,6 +13,12 @@ export function VitePWA(userOptions: Partial<VitePWAOptions> = {}): Plugin[] {
   let viteConfig: ResolvedConfig
   let options: ResolvedVitePWAOptions
   let useImportRegister = false
+  let swDevGenerated = false
+
+  const swDevOptions = {
+    swUrl: 'dev-sw.js?dev-sw',
+    workboxPaths: new Map<string, string>(),
+  }
 
   return [
     {
@@ -92,6 +98,61 @@ export function VitePWA(userOptions: Partial<VitePWAOptions> = {}): Plugin[] {
             VIRTUAL_MODULES_MAP[id],
           )
         }
+      },
+    },
+    {
+      name: 'vite-plugin-pwa:dev-sw',
+      apply: 'serve',
+      async configResolved(config) {
+        viteConfig = config
+        options = await resolveOptions(userOptions, viteConfig)
+      },
+      async load(id) {
+        if (options.strategies === 'generateSW' && options.workbox.runtimeCaching) {
+          if (id.endsWith(swDevOptions.swUrl)) {
+            const globDirectory = resolve(__dirname, options.workbox.globDirectory, 'dev-dist')
+            const swDest = resolve(__dirname, globDirectory, 'sw.js')
+            if (!existsSync(swDest) || !swDevGenerated) {
+              // we only need to generate sw with runtimeCaching on dist folder and then read the content
+              const { filePaths } = await generateSW({
+                ...options.workbox,
+                cleanupOutdatedCaches: true,
+                clientsClaim: true,
+                skipWaiting: true,
+                additionalManifestEntries: undefined,
+                globDirectory,
+                swDest,
+              })
+              // we store workbox dependencies, and so we can then resolve them
+              filePaths.forEach((we) => {
+                const name = basename(we)
+                // we exclude the sw itself
+                if (name !== 'sw.js')
+                  swDevOptions.workboxPaths.set(options.base + name, we)
+              })
+              swDevGenerated = true
+            }
+            return await fs.readFile(swDest, 'utf-8')
+          }
+
+          if (swDevOptions.workboxPaths.has(id))
+            return await fs.readFile(swDevOptions.workboxPaths.get(id)!, 'utf-8')
+        }
+      },
+      transformIndexHtml: {
+        enforce: 'post',
+        transform(html) {
+          if (options.strategies === 'generateSW' && options.workbox.runtimeCaching) {
+            return injectServiceWorker(
+              html, {
+                ...options,
+                manifest: false,
+                injectRegister: 'inline',
+                filename: swDevOptions.swUrl,
+              },
+            )
+          }
+        },
       },
     },
   ]

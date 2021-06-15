@@ -1,4 +1,3 @@
-import { join as _join } from 'path'
 import { FILE_MANIFEST, FILE_SW_REGISTER } from './constants'
 import { ResolvedVitePWAOptions } from './types'
 
